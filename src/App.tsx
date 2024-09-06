@@ -345,7 +345,7 @@ export default function App() {
                 <path d="M2 12h20"/>
               </svg>
             </a>
-            <a href="https://github.com/iketiunn/webm-to-mp4" target="_blank">
+            <a href="https://github.com/iketiunn/rmbg" target="_blank">
               <svg
                 width="20"
                 height="20"
