@@ -93,7 +93,12 @@ export default function App() {
 
         //const model_id = "Xenova/modnet";
         const model_id = "briaai/RMBG-1.4";
-        if (env.backends.onnx.wasm) env.backends.onnx.wasm.proxy = false;
+        if (env.backends.onnx.wasm) {
+          env.backends.onnx.wasm.proxy = false;
+          // Default is https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.14/dist/ort-wasm-simd-threaded.jsep.wasm
+          // But sometimes it's slow, about 21.5mb
+          env.backends.onnx.wasm.wasmPaths = "https://unpkg.com/@huggingface/transformers@3.0.0-alpha.14/dist/";
+        }
         modelRef.current ??= await AutoModel.from_pretrained(model_id, {
           device: "webgpu",
           dtype: "fp16",
@@ -102,6 +107,7 @@ export default function App() {
       } catch (err) {
         setError(err);
       }
+      // Still needs to wait "ort-wasm-simd-threaded.jsep.wasm" to be downloaded...
       setIsLoading(false);
     })();
   }, []);
