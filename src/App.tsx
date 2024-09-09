@@ -13,13 +13,15 @@ import "./App.css";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 
+
+
 export default function App() {
-  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<any>(null);
-
   const modelRef = useRef<PreTrainedModel | null>(null);
   const processorRef = useRef<Processor | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [totalSize, setTotalSize] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -27,10 +29,74 @@ export default function App() {
         if (!navigator?.gpu) {
           throw new Error("WebGPU is not supported in this browser.");
         }
-        const model_id = "Xenova/modnet";
+      
+        window.fetch = new Proxy(window.fetch, {
+          async apply(target, thisArg, args) {
+            if (!args[0].endsWith('.onnx')) {
+              return Reflect.apply(target, thisArg, args);
+            }
+
+            // Call the original fetch
+            const response = await Reflect.apply(target, thisArg, args);
+
+            // Clone the response so we can read the body
+            const contentLength = response.headers.get('content-length');
+            const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+            setTotalSize(totalBytes / 1024 / 1024);
+
+            let downloadedBytes = 0;
+
+            // If there's no body, just return the response as is
+            if (!response.body) {
+              return response;
+            }
+
+            // Create a new readable stream to read the response body
+            const reader = response.body.getReader();
+
+            // Create a new response with the stream that tracks progress
+            const stream = new ReadableStream({
+              async pull(controller) {
+                // Read the data
+                const { done, value } = await reader.read();
+
+                // If we're done, close the stream
+                if (done) {
+                  controller.close();
+                  return;
+                }
+
+                // Track the downloaded bytes
+                downloadedBytes += value.length;
+
+                // Log the progress
+                if (totalBytes) {
+                  setProgress((prevProgress) => {
+                    const progress = (downloadedBytes / totalBytes) * 100;
+                    return Math.max(prevProgress, progress);
+                  });
+                }
+
+                // Send the data chunk to the stream
+                controller.enqueue(value);
+              }
+            });
+
+            // Return the new response with the intercepted stream
+            return new Response(stream, {
+              headers: response.headers,
+              status: response.status,
+              statusText: response.statusText,
+            });
+          }
+        });
+
+        //const model_id = "Xenova/modnet";
+        const model_id = "briaai/RMBG-1.4";
         if (env.backends.onnx.wasm) env.backends.onnx.wasm.proxy = false;
         modelRef.current ??= await AutoModel.from_pretrained(model_id, {
           device: "webgpu",
+          dtype: "fp16",
         });
         processorRef.current ??= await AutoProcessor.from_pretrained(model_id);
       } catch (err) {
@@ -54,21 +120,12 @@ export default function App() {
   }
 
   function Loading() {
-    const [progress, setProgress] = useState(0);
-    useEffect(() => {
-      const interval = setInterval(() => {
-        setProgress((prev) => (prev + 1) % 100);
-      }, 1000 / 60);
-
-      return () => clearInterval(interval);
-    }, [progress, isLoading]);
-
     return (
       <div className="h-full w-full flex flex-col items-center justify-center">
-        <p className="text-xl font-semibold text-gray-700">Loading background removal model...</p>
-        <p className="text-sm text-gray-500 mt-2">This may take a few moments, please wait.</p>
+        <p className="text-xl font-semibold text-gray-700">Loading background removal model(briaai/RMBG-1.4)...</p>
+        <p className="text-sm text-gray-500 mt-2">Total size: {totalSize.toFixed()} MB.This may take a few moments, please wait.</p>
         <div className="w-2/3 bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 mt-4">
-          <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: `${progress}%` }} />
+          <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: `${progress.toFixed()}%` }} />
         </div>
       </div>
     );
